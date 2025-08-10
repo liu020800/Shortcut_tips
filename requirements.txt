@@ -1,0 +1,6 @@
+# 快捷键提示工具依赖包列表
+PyQt6>=6.4.0
+psutil>=5.9.0
+pywin32>=303
+jsonschema>=4.17.0
+watchdog>=3.0.0
