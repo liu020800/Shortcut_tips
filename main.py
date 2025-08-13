@@ -7,6 +7,12 @@ main.py
 """
 
 import sys, os, logging, json
+try:
+    import win32api
+    import win32event
+    import winerror
+except ImportError:
+    win32api = None
 from PyQt6.QtWidgets import (QApplication, QSystemTrayIcon, QMenu, QDialog,
                              QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
                              QPushButton, QSlider, QColorDialog, QComboBox,
@@ -365,6 +371,12 @@ class ShortcutTool:
         """
         初始化快捷键工具
         """
+        # 检查是否已有实例运行
+        self.mutex = None
+        if not self._check_single_instance():
+            logger.warning("检测到程序已在运行，退出当前实例")
+            sys.exit(0)
+        
         # 创建应用
         self.app = QApplication(sys.argv)
         
@@ -377,6 +389,72 @@ class ShortcutTool:
         
         # 初始化模块
         self.init_modules()
+    
+    def _check_single_instance(self):
+        """
+        检查是否已有程序实例在运行
+        
+        Returns:
+            bool: True表示可以继续运行，False表示已有实例在运行
+        """
+        if win32api is None:
+            # 如果没有win32api，使用简单的文件锁方式
+            try:
+                import tempfile
+                lock_file = os.path.join(tempfile.gettempdir(), "shortcut_tool.lock")
+                if os.path.exists(lock_file):
+                    # 检查进程是否还在运行
+                    try:
+                        with open(lock_file, 'r') as f:
+                            pid = int(f.read().strip())
+                        # 尝试检查进程是否存在（Windows方式）
+                        import subprocess
+                        result = subprocess.run(['tasklist', '/FI', f'PID eq {pid}'], 
+                                              capture_output=True, text=True)
+                        if str(pid) in result.stdout:
+                            return False  # 进程存在，不允许启动新实例
+                    except (OSError, ValueError):
+                        # 进程不存在或文件损坏，删除锁文件
+                        os.remove(lock_file)
+                
+                # 创建锁文件
+                with open(lock_file, 'w') as f:
+                    f.write(str(os.getpid()))
+                return True
+            except Exception as e:
+                logger.warning(f"单实例检查失败: {e}")
+                return True  # 出错时允许启动
+        else:
+            # 使用Windows互斥锁
+            try:
+                self.mutex = win32event.CreateMutex(None, False, "ShortcutToolMutex")
+                if win32api.GetLastError() == winerror.ERROR_ALREADY_EXISTS:
+                    return False
+                return True
+            except Exception as e:
+                logger.warning(f"创建互斥锁失败: {e}")
+                return True  # 出错时允许启动
+    
+    def _cleanup_single_instance(self):
+        """
+        清理单实例检查相关资源
+        """
+        if win32api is None:
+            # 清理文件锁
+            try:
+                import tempfile
+                lock_file = os.path.join(tempfile.gettempdir(), "shortcut_tool.lock")
+                if os.path.exists(lock_file):
+                    os.remove(lock_file)
+            except Exception as e:
+                logger.warning(f"清理锁文件失败: {e}")
+        else:
+            # Windows互斥锁会在进程结束时自动释放
+            if self.mutex:
+                try:
+                    win32api.CloseHandle(self.mutex)
+                except Exception as e:
+                    logger.warning(f"关闭互斥锁失败: {e}")
         
         # 创建系统托盘图标
         self.create_tray_icon()
@@ -605,6 +683,9 @@ class ShortcutTool:
         """
         运行应用
         """
+        # 创建系统托盘图标
+        self.create_tray_icon()
+        
         # 启动热键监听
         self.hotkey_listener.start()
         
@@ -617,7 +698,10 @@ class ShortcutTool:
         )
         
         # 运行应用
-        return self.app.exec()
+        try:
+            return self.app.exec()
+        finally:
+            self._cleanup_single_instance()
     
     def get_hotkey_text(self):
         """
