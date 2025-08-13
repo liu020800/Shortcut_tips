@@ -1,24 +1,12 @@
 # -*- mode: python ; coding: utf-8 -*-
-from PyInstaller.utils.hooks import collect_submodules
-from PyInstaller.utils.hooks import collect_all
-
-datas = [('shortcuts.json', '.'), ('process_mapping.json', '.'), ('icon.svg', '.')]
-binaries = []
-hiddenimports = ['PyQt6', 'pynput']
-hiddenimports += collect_submodules('PyQt6')
-hiddenimports += collect_submodules('pynput')
-tmp_ret = collect_all('PyQt6')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
-tmp_ret = collect_all('pynput')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
 
 a = Analysis(
     ['main.py'],
     pathex=[],
-    binaries=binaries,
-    datas=datas,
-    hiddenimports=hiddenimports,
+    binaries=[],
+    datas=[],
+    hiddenimports=[],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

@@ -11,7 +11,7 @@ from PyQt6.QtWidgets import (QApplication, QSystemTrayIcon, QMenu, QDialog,
                              QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
                              QPushButton, QSlider, QColorDialog, QComboBox,
                              QSpinBox, QMessageBox, QFileDialog, QGroupBox, QFormLayout,
-                             QListWidget, QInputDialog, QTabWidget, QWidget)
+                             QListWidget, QInputDialog, QTabWidget, QWidget, QCheckBox)
 from PyQt6.QtCore import Qt, QSettings
 from PyQt6.QtGui import QIcon, QAction, QColor
 
@@ -19,6 +19,7 @@ from shortcut_manager import ShortcutManager
 from context_monitor import ContextMonitor
 from hotkey_listener import HotkeyListener
 from shortcut_window import ShortcutWindow
+from autostart_manager import AutostartManager
 
 # 统一日志配置
 logging.basicConfig(
@@ -39,6 +40,7 @@ class SettingsDialog(QDialog):
         self.setFixedSize(500, 600)
         self.settings = QSettings("ShortcutTool", "Settings")
         self.process_mappings = {}
+        self.autostart_manager = AutostartManager()
         self._load_process_mappings()
         self._build_ui()
         self._load()
@@ -147,6 +149,14 @@ class SettingsDialog(QDialog):
         self.font_color_btn = QPushButton(); self.font_color_btn.setFixedWidth(80); self.font_color_btn.clicked.connect(lambda: self._pick_color(self.font_color_btn))
         font_layout.addRow("文字色:", self.font_color_btn)
         basic_layout.addWidget(font_box)
+
+        # 自启动设置
+        autostart_box = QGroupBox("自启动")
+        autostart_layout = QVBoxLayout(autostart_box)
+        self.autostart_cb = QCheckBox("开机自动启动")
+        self.autostart_cb.setToolTip("启用后，程序将在Windows启动时自动运行")
+        autostart_layout.addWidget(self.autostart_cb)
+        basic_layout.addWidget(autostart_box)
 
         # 数据文件
         data_box = QGroupBox("数据文件")
@@ -307,6 +317,9 @@ class SettingsDialog(QDialog):
         if not data:
             data = os.path.join(os.path.dirname(__file__), "shortcuts.json")
         self.data_edit.setText(data)
+        
+        # 加载自启动状态
+        self.autostart_cb.setChecked(self.autostart_manager.is_autostart_enabled())
 
     def accept(self):
         self.settings.setValue("hotkey/ctrl", self.ctrl_cb.currentText()=="Ctrl")
@@ -319,6 +332,22 @@ class SettingsDialog(QDialog):
         self.settings.setValue("font/size", self.size_spin.value())
         self.settings.setValue("font/color", self.font_color_btn.text())
         self.settings.setValue("data/file_path", self.data_edit.text())
+        
+        # 保存自启动设置
+        try:
+            if self.autostart_cb.isChecked():
+                if not self.autostart_manager.is_autostart_enabled():
+                    success = self.autostart_manager.enable_autostart()
+                    if not success:
+                        QMessageBox.warning(self, "警告", "启用开机自启动失败，可能需要管理员权限")
+            else:
+                if self.autostart_manager.is_autostart_enabled():
+                    success = self.autostart_manager.disable_autostart()
+                    if not success:
+                        QMessageBox.warning(self, "警告", "禁用开机自启动失败")
+        except Exception as e:
+            logger.error(f"保存自启动设置失败: {e}")
+            QMessageBox.warning(self, "错误", f"保存自启动设置失败: {str(e)}")
         
         # 保存进程映射配置
         self._save_process_mappings()
@@ -338,6 +367,9 @@ class ShortcutTool:
         """
         # 创建应用
         self.app = QApplication(sys.argv)
+        
+        # 初始化自启动管理器
+        self.autostart_manager = AutostartManager()
         self.app.setQuitOnLastWindowClosed(False)  # 关闭窗口时不退出应用
         
         # 加载设置
@@ -443,6 +475,13 @@ class ShortcutTool:
         reload_action.triggered.connect(self.reload_data)
         tray_menu.addAction(reload_action)
         
+        # 自启动切换
+        autostart_action = QAction("开机自启动", self.app)
+        autostart_action.setCheckable(True)
+        autostart_action.setChecked(self.autostart_manager.is_autostart_enabled())
+        autostart_action.triggered.connect(self.toggle_autostart)
+        tray_menu.addAction(autostart_action)
+        
         tray_menu.addSeparator()
         
         exit_action = QAction("退出", self.app)
@@ -538,6 +577,29 @@ class ShortcutTool:
             self.tray_icon.showMessage("数据已重新加载", "快捷键数据已成功重新加载", QSystemTrayIcon.MessageIcon.Information, 2000)
         else:
             self.tray_icon.showMessage("加载失败", "无法加载快捷键数据，请检查数据文件", QSystemTrayIcon.MessageIcon.Warning, 2000)
+    
+    def toggle_autostart(self):
+        """
+        切换开机自启动状态
+        """
+        try:
+            new_status = self.autostart_manager.toggle_autostart()
+            status_text = "已启用" if new_status else "已禁用"
+            self.tray_icon.showMessage(
+                "自启动设置已更新", 
+                f"开机自启动{status_text}", 
+                QSystemTrayIcon.MessageIcon.Information, 
+                2000
+            )
+            logger.info(f"自启动状态已切换为: {status_text}")
+        except Exception as e:
+            logger.error(f"切换自启动状态失败: {e}")
+            self.tray_icon.showMessage(
+                "操作失败", 
+                f"切换自启动状态失败: {str(e)}", 
+                QSystemTrayIcon.MessageIcon.Warning, 
+                3000
+            )
     
     def run(self):
         """

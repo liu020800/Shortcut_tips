@@ -5,7 +5,8 @@
     "msedge.exe": "chrome.exe",
     "code.exe": "code.exe",
     "notepad++.exe": "notepad++.exe",
-    "explorer.exe": "explorer.exe"
+    "explorer.exe": "explorer.exe",
+    "autocad application": "acad.exe"
   },
   "description": "进程名映射配置文件，左侧为实际进程名，右侧为shortcuts.json中对应的配置键名"
 }
